@@ -1,0 +1,8 @@
+[package]
+name = "osm-parquet"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+osm = { git = "https://github.com/ximonsson/osm-rs.git" }
+polars = { version = "0.28", features = ["lazy","temporal","describe","json","parquet","dtype-datetime"] }
