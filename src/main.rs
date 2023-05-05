@@ -170,24 +170,24 @@ fn rels2parquet(data: &osm::File, dst: &str) {
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
-    if args.len() < 2 {
-        panic!("not enough input arguments");
+
+    if args.len() < 3 {
+        eprintln!("not enought arguments; usage:");
+        eprintln!("osm2parquet [inputfile] [target directory]");
+        std::process::exit(1);
     }
 
-    // setup directories
-    let country = &args[1];
-    let basedir = "/home/ximon/data/osm";
-    let fp = format!("{}/{}-latest.osm.pbf", basedir, country);
-    let dir = format!("{}/duckdb/{}", basedir, country);
+    let inputfile = &args[1];
+    let target = &args[2];
 
     //
     // load osm data
     //
 
     println!("load osm data. ---");
-    println!(" > file: {}", fp);
+    println!(" > file: {}", inputfile);
 
-    let f = std::fs::File::open(fp).unwrap();
+    let f = std::fs::File::open(inputfile).unwrap();
     let data = osm::File::from_proto_reader(f).unwrap();
 
     println!(
@@ -205,13 +205,13 @@ fn main() {
 
     // populate database
     println!(" > nodes.");
-    nodes2parquet(&data, &dir);
+    nodes2parquet(&data, &target);
 
     println!(" > ways.");
-    ways2parquet(&data, &dir);
+    ways2parquet(&data, &target);
 
     println!(" > relations.");
-    rels2parquet(&data, &dir);
+    rels2parquet(&data, &target);
 
     println!("done.")
 }
