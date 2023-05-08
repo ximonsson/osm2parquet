@@ -1,5 +1,5 @@
 [package]
-name = "osm-parquet"
+name = "osm2parquet"
 version = "0.1.0"
 edition = "2021"
 
