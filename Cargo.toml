@@ -5,7 +5,8 @@ edition = "2021"
 
 [dependencies]
 osm = { git = "https://github.com/ximonsson/osm-rs.git" }
-polars = { version = "0.28", features = ["parquet"] }
+#polars = { version = "0.28", features = ["parquet"] }
+parquet = { version = "39.0" }
 
 [[bin]]
 name = "osm2parquet"

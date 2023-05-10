@@ -1,4 +1,9 @@
-use polars::prelude::*;
+//use polars::prelude::*;
+
+use parquet::{
+    file::{properties::WriterProperties, writer::SerializedFileWriter},
+    schema::parser::parse_message_type,
+};
 
 fn tags2parquet(elements: &Vec<impl osm::Element>, fp: &str) {
     // create data frame
@@ -20,9 +25,17 @@ fn tags2parquet(elements: &Vec<impl osm::Element>, fp: &str) {
         .flatten()
         .collect::<Vec<i64>>();
 
-    let mut df = df!("id" => ids, "k" => ks, "v" => vs).unwrap();
-    let w = ParquetWriter::new(std::fs::File::create(fp).unwrap());
-    w.finish(&mut df).unwrap();
+    let message_type = "
+        message schema {
+            REQUIRED INT64 id,
+            REQUIRED VARCHAR k,
+            REQUIRED VARCHAR v,
+        }
+        ";
+
+    //let mut df = df!("id" => ids, "k" => ks, "v" => vs).unwrap();
+    //let w = ParquetWriter::new(std::fs::File::create(fp).unwrap());
+    //w.finish(&mut df).unwrap();
 }
 
 fn nodes2parquet(data: &osm::File, dst: &str) {
@@ -40,12 +53,11 @@ fn nodes2parquet(data: &osm::File, dst: &str) {
     });
 
     // create dataframe with the node info
-    let mut df = df!("id" => &ids, "lat" => &lat, "lon" => &lon).unwrap();
+    //let mut df = df!("id" => &ids, "lat" => &lat, "lon" => &lon).unwrap();
 
-    // store the dataframe to parquet
-    let f = std::fs::File::create(format!("{}/nodes.parquet", dst)).unwrap();
-    let w = ParquetWriter::new(f);
-    w.finish(&mut df).unwrap();
+    //let f = std::fs::File::create(format!("{}/nodes.parquet", dst)).unwrap();
+    //let w = ParquetWriter::new(f);
+    //w.finish(&mut df).unwrap();
 
     //
     // store tags
@@ -61,10 +73,10 @@ fn ways2parquet(data: &osm::File, dst: &str) {
     //
 
     let ids = data.ways.iter().map(|w| w.id).collect::<Vec<i64>>();
-    let mut df = df!("id" => &ids).unwrap();
+    //let mut df = df!("id" => &ids).unwrap();
 
-    let w = ParquetWriter::new(std::fs::File::create(format!("{}/ways.parquet", dst)).unwrap());
-    w.finish(&mut df).unwrap();
+    //let w = ParquetWriter::new(std::fs::File::create(format!("{}/ways.parquet", dst)).unwrap());
+    //w.finish(&mut df).unwrap();
 
     //
     // store tags
@@ -92,10 +104,10 @@ fn ways2parquet(data: &osm::File, dst: &str) {
         .flatten()
         .collect::<Vec<i64>>();
 
-    let mut df = df!("id" => ids, "nodeid" => refs).unwrap();
-    let w =
-        ParquetWriter::new(std::fs::File::create(format!("{}/way-nodes.parquet", dst)).unwrap());
-    w.finish(&mut df).unwrap();
+    //let mut df = df!("id" => ids, "nodeid" => refs).unwrap();
+    //let w =
+    //ParquetWriter::new(std::fs::File::create(format!("{}/way-nodes.parquet", dst)).unwrap());
+    //w.finish(&mut df).unwrap();
 }
 
 fn rels2parquet(data: &osm::File, dst: &str) {
@@ -104,11 +116,11 @@ fn rels2parquet(data: &osm::File, dst: &str) {
     //
 
     let ids = data.relations.iter().map(|r| r.id).collect::<Vec<i64>>();
-    let mut df = df!("id" => &ids).unwrap();
+    //let mut df = df!("id" => &ids).unwrap();
 
-    let w =
-        ParquetWriter::new(std::fs::File::create(format!("{}/relations.parquet", dst)).unwrap());
-    w.finish(&mut df).unwrap();
+    //let w =
+    //ParquetWriter::new(std::fs::File::create(format!("{}/relations.parquet", dst)).unwrap());
+    //w.finish(&mut df).unwrap();
 
     //
     // store tags
@@ -160,12 +172,12 @@ fn rels2parquet(data: &osm::File, dst: &str) {
         .flatten()
         .collect::<Vec<i64>>();
 
-    let mut df =
-        df!("relation" => ids, "member" => memid, "type" => memtype, "role" => memrole).unwrap();
-    let w = ParquetWriter::new(
-        std::fs::File::create(format!("{}/relation-members.parquet", dst)).unwrap(),
-    );
-    w.finish(&mut df).unwrap();
+    //let mut df =
+    //df!("relation" => ids, "member" => memid, "type" => memtype, "role" => memrole).unwrap();
+    //let w = ParquetWriter::new(
+    //std::fs::File::create(format!("{}/relation-members.parquet", dst)).unwrap(),
+    //);
+    //w.finish(&mut df).unwrap();
 }
 
 fn main() {
