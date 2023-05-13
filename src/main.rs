@@ -57,8 +57,6 @@ fn tags2parquet(elements: &Vec<impl osm::Element>, fp: &str) {
     let mut w = pqwriter::<std::fs::File>(msgtype, std::fs::File::create(fp).unwrap()).unwrap();
     let mut rgw = w.next_row_group().unwrap();
 
-    let tmp = [(parquet::data_type::Int64Type {}, &ids)];
-
     for i in 0..3 {
         if let Some(mut cw) = rgw.next_column().unwrap() {
             // write data
@@ -147,10 +145,25 @@ fn ways2parquet(data: &osm::File, dst: &str) {
     //
 
     let ids = data.ways.iter().map(|w| w.id).collect::<Vec<i64>>();
-    //let mut df = df!("id" => &ids).unwrap();
 
-    //let w = ParquetWriter::new(std::fs::File::create(format!("{}/ways.parquet", dst)).unwrap());
-    //w.finish(&mut df).unwrap();
+    let msgtype = "
+        message schema {
+            REQUIRED INT64 id;
+        }
+        ";
+
+    let mut w = pqwriter::<std::fs::File>(
+        msgtype,
+        std::fs::File::create(format!("{}/ways.parquet", dst)).unwrap(),
+    )
+    .unwrap();
+    let mut rgw = w.next_row_group().unwrap();
+
+    let mut cw = rgw.next_column().unwrap().unwrap();
+    cw.typed::<parquet::data_type::Int64Type>()
+        .write_batch(&ids, None, None)
+        .unwrap();
+    cw.close().unwrap();
 
     //
     // store tags
@@ -164,13 +177,6 @@ fn ways2parquet(data: &osm::File, dst: &str) {
     //
 
     println!(" >> node refs.");
-    let refs = data
-        .ways
-        .iter()
-        .map(|w| w.nodes.iter().map(|n| n.r#ref).collect::<Vec<i64>>())
-        .flatten()
-        .collect::<Vec<i64>>();
-
     let ids = data
         .ways
         .iter()
@@ -178,10 +184,38 @@ fn ways2parquet(data: &osm::File, dst: &str) {
         .flatten()
         .collect::<Vec<i64>>();
 
-    //let mut df = df!("id" => ids, "nodeid" => refs).unwrap();
-    //let w =
-    //ParquetWriter::new(std::fs::File::create(format!("{}/way-nodes.parquet", dst)).unwrap());
-    //w.finish(&mut df).unwrap();
+    let refs = data
+        .ways
+        .iter()
+        .map(|w| w.nodes.iter().map(|n| n.r#ref).collect::<Vec<i64>>())
+        .flatten()
+        .collect::<Vec<i64>>();
+
+    let msgtype = "
+        message schema {
+            REQUIRED INT64 way;
+            REQUIRED INT64 node;
+        }
+        ";
+
+    let mut w = pqwriter::<std::fs::File>(
+        msgtype,
+        std::fs::File::create(format!("{}/ways.parquet", dst)).unwrap(),
+    )
+    .unwrap();
+    let mut rgw = w.next_row_group().unwrap();
+
+    let mut cw = rgw.next_column().unwrap().unwrap();
+    cw.typed::<parquet::data_type::Int64Type>()
+        .write_batch(&ids, None, None)
+        .unwrap();
+    cw.close().unwrap();
+
+    let mut cw = rgw.next_column().unwrap().unwrap();
+    cw.typed::<parquet::data_type::Int64Type>()
+        .write_batch(&refs, None, None)
+        .unwrap();
+    cw.close().unwrap();
 }
 
 fn rels2parquet(data: &osm::File, dst: &str) {
@@ -190,11 +224,25 @@ fn rels2parquet(data: &osm::File, dst: &str) {
     //
 
     let ids = data.relations.iter().map(|r| r.id).collect::<Vec<i64>>();
-    //let mut df = df!("id" => &ids).unwrap();
 
-    //let w =
-    //ParquetWriter::new(std::fs::File::create(format!("{}/relations.parquet", dst)).unwrap());
-    //w.finish(&mut df).unwrap();
+    let msgtype = "
+        message schema {
+            REQUIRED INT64 id;
+        }
+        ";
+
+    let mut w = pqwriter::<std::fs::File>(
+        msgtype,
+        std::fs::File::create(format!("{}/relations.parquet", dst)).unwrap(),
+    )
+    .unwrap();
+    let mut rgw = w.next_row_group().unwrap();
+
+    let mut cw = rgw.next_column().unwrap().unwrap();
+    cw.typed::<parquet::data_type::Int64Type>()
+        .write_batch(&ids, None, None)
+        .unwrap();
+    cw.close().unwrap();
 
     //
     // store tags
@@ -221,11 +269,11 @@ fn rels2parquet(data: &osm::File, dst: &str) {
         .map(|r| {
             r.members
                 .iter()
-                .map(|m| m.r#type.as_ref())
-                .collect::<Vec<&str>>()
+                .map(|m| -> parquet::data_type::ByteArray { m.r#type.as_str().into() })
+                .collect::<Vec<parquet::data_type::ByteArray>>()
         })
         .flatten()
-        .collect::<Vec<&str>>();
+        .collect::<Vec<parquet::data_type::ByteArray>>();
 
     let memrole = data
         .relations
@@ -233,11 +281,11 @@ fn rels2parquet(data: &osm::File, dst: &str) {
         .map(|r| {
             r.members
                 .iter()
-                .map(|m| m.role.as_ref())
-                .collect::<Vec<&str>>()
+                .map(|m| -> parquet::data_type::ByteArray { m.role.as_str().into() })
+                .collect::<Vec<parquet::data_type::ByteArray>>()
         })
         .flatten()
-        .collect::<Vec<&str>>();
+        .collect::<Vec<parquet::data_type::ByteArray>>();
 
     let ids = data
         .relations
@@ -245,6 +293,46 @@ fn rels2parquet(data: &osm::File, dst: &str) {
         .map(|e| std::iter::repeat(e.id).take(e.members.len()))
         .flatten()
         .collect::<Vec<i64>>();
+
+    let msgtype = "
+        message schema {
+            REQUIRED INT64 relation;
+            REQUIRED INT64 member;
+            REQUIRED BYTE_ARRAY role;
+            REQUIRED BYTE_ARRAY type;
+        }
+        ";
+
+    let mut w = pqwriter::<std::fs::File>(
+        msgtype,
+        std::fs::File::create(format!("{}/relation-members.parquet", dst)).unwrap(),
+    )
+    .unwrap();
+    let mut rgw = w.next_row_group().unwrap();
+
+    let mut cw = rgw.next_column().unwrap().unwrap();
+    cw.typed::<parquet::data_type::Int64Type>()
+        .write_batch(&ids, None, None)
+        .unwrap();
+    cw.close().unwrap();
+
+    let mut cw = rgw.next_column().unwrap().unwrap();
+    cw.typed::<parquet::data_type::Int64Type>()
+        .write_batch(&memid, None, None)
+        .unwrap();
+    cw.close().unwrap();
+
+    let mut cw = rgw.next_column().unwrap().unwrap();
+    cw.typed::<parquet::data_type::ByteArrayType>()
+        .write_batch(&memrole, None, None)
+        .unwrap();
+    cw.close().unwrap();
+
+    let mut cw = rgw.next_column().unwrap().unwrap();
+    cw.typed::<parquet::data_type::ByteArrayType>()
+        .write_batch(&memtype, None, None)
+        .unwrap();
+    cw.close().unwrap();
 
     //let mut df =
     //df!("relation" => ids, "member" => memid, "type" => memtype, "role" => memrole).unwrap();
