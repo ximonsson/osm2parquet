@@ -42,17 +42,16 @@ fn tags2parquet(elements: &Vec<impl osm::Element>, fp: &str) {
     let mut rgw = w.next_row_group().unwrap();
 
     for i in 0..3 {
-        //while let Some(mut cw) = rgw.next_column().unwrap() {
+        //while  {
         let dt = match i {
             0 => parquet::data_type::Int64Type,
             _ => parquet::data_type::ByteArrayType,
         };
-
-        // write data
-        cw.typed::<parquet::data_type::Int64Type>()
-            .write_batch(&ids, None, None)
-            .unwrap();
-        cw.close().unwrap();
+        if let Some(mut cw) = rgw.next_column().unwrap() {
+            // write data
+            cw.typed::<const dt>().write_batch(&ids, None, None).unwrap();
+            cw.close().unwrap();
+        }
     }
 
     rgw.close().unwrap();
