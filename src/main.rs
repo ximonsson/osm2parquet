@@ -7,19 +7,38 @@ use parquet::{
 
 use std::sync;
 
+fn pqwriter<W: std::io::Write>(
+    msgtype: &str,
+    f: W,
+) -> parquet::errors::Result<SerializedFileWriter<W>> {
+    let schema = sync::Arc::new(parse_message_type(msgtype).unwrap());
+    let props = sync::Arc::new(WriterProperties::builder().build());
+    SerializedFileWriter::new(f, schema, props)
+}
+
 fn tags2parquet(elements: &Vec<impl osm::Element>, fp: &str) {
     // create data frame
-    let ks: Vec<&str> = elements
+    let ks: Vec<parquet::data_type::ByteArray> = elements
         .iter()
-        .map(|e| e.tags().iter().map(|t| t.k.as_str()).collect::<Vec<&str>>())
+        .map(|e| {
+            e.tags()
+                .iter()
+                .map(|t| -> parquet::data_type::ByteArray { t.k.as_str().into() })
+                .collect::<Vec<parquet::data_type::ByteArray>>()
+        })
         .flatten()
-        .collect::<Vec<&str>>();
+        .collect::<Vec<parquet::data_type::ByteArray>>();
 
-    let vs: Vec<&str> = elements
+    let vs: Vec<parquet::data_type::ByteArray> = elements
         .iter()
-        .map(|e| e.tags().iter().map(|t| t.v.as_str()).collect::<Vec<&str>>())
+        .map(|e| {
+            e.tags()
+                .iter()
+                .map(|t| -> parquet::data_type::ByteArray { t.v.as_str().into() })
+                .collect::<Vec<parquet::data_type::ByteArray>>()
+        })
         .flatten()
-        .collect::<Vec<&str>>();
+        .collect::<Vec<parquet::data_type::ByteArray>>();
 
     let ids = elements
         .iter()
@@ -35,31 +54,33 @@ fn tags2parquet(elements: &Vec<impl osm::Element>, fp: &str) {
         }
         ";
 
-    let schema = sync::Arc::new(parse_message_type(msgtype).unwrap());
-    let props = sync::Arc::new(WriterProperties::builder().build());
-    let f = std::fs::File::create(fp).unwrap();
-    let mut w = SerializedFileWriter::new(f, schema, props).unwrap();
+    let mut w = pqwriter::<std::fs::File>(msgtype, std::fs::File::create(fp).unwrap()).unwrap();
     let mut rgw = w.next_row_group().unwrap();
 
+    let tmp = [(parquet::data_type::Int64Type {}, &ids)];
+
     for i in 0..3 {
-        //while  {
-        let dt = match i {
-            0 => parquet::data_type::Int64Type,
-            _ => parquet::data_type::ByteArrayType,
-        };
         if let Some(mut cw) = rgw.next_column().unwrap() {
             // write data
-            cw.typed::<const dt>().write_batch(&ids, None, None).unwrap();
+            let res = match i {
+                0 => cw
+                    .typed::<parquet::data_type::Int64Type>()
+                    .write_batch(&ids, None, None),
+                1 => cw
+                    .typed::<parquet::data_type::ByteArrayType>()
+                    .write_batch(&ks, None, None),
+                2 => cw
+                    .typed::<parquet::data_type::ByteArrayType>()
+                    .write_batch(&vs, None, None),
+                _ => panic!("should not happen"),
+            };
+            res.unwrap();
             cw.close().unwrap();
         }
     }
 
     rgw.close().unwrap();
     w.close().unwrap();
-
-    //let mut df = df!("id" => ids, "k" => ks, "v" => vs).unwrap();
-    //let w = ParquetWriter::new(std::fs::File::create(fp).unwrap());
-    //w.finish(&mut df).unwrap();
 }
 
 fn nodes2parquet(data: &osm::File, dst: &str) {
@@ -76,12 +97,41 @@ fn nodes2parquet(data: &osm::File, dst: &str) {
         lon.push(n.lon)
     });
 
-    // create dataframe with the node info
-    //let mut df = df!("id" => &ids, "lat" => &lat, "lon" => &lon).unwrap();
+    let msgtype = "
+        message schema {
+            REQUIRED INT64 id;
+            REQUIRED DOUBLE lat;
+            REQUIRED DOUBLE lon;
+        }
+        ";
 
-    //let f = std::fs::File::create(format!("{}/nodes.parquet", dst)).unwrap();
-    //let w = ParquetWriter::new(f);
-    //w.finish(&mut df).unwrap();
+    let mut w = pqwriter::<std::fs::File>(
+        msgtype,
+        std::fs::File::create(format!("{}/nodes.parquet", dst)).unwrap(),
+    )
+    .unwrap();
+    let mut rgw = w.next_row_group().unwrap();
+
+    let mut cw = rgw.next_column().unwrap().unwrap();
+    cw.typed::<parquet::data_type::Int64Type>()
+        .write_batch(&ids, None, None)
+        .unwrap();
+    cw.close().unwrap();
+
+    let mut cw = rgw.next_column().unwrap().unwrap();
+    cw.typed::<parquet::data_type::DoubleType>()
+        .write_batch(&lat, None, None)
+        .unwrap();
+    cw.close().unwrap();
+
+    let mut cw = rgw.next_column().unwrap().unwrap();
+    cw.typed::<parquet::data_type::DoubleType>()
+        .write_batch(&lon, None, None)
+        .unwrap();
+    cw.close().unwrap();
+
+    rgw.close().unwrap();
+    w.close().unwrap();
 
     //
     // store tags
