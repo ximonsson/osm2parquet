@@ -5,6 +5,8 @@ use parquet::{
     schema::parser::parse_message_type,
 };
 
+use std::sync;
+
 fn tags2parquet(elements: &Vec<impl osm::Element>, fp: &str) {
     // create data frame
     let ks: Vec<&str> = elements
@@ -25,13 +27,36 @@ fn tags2parquet(elements: &Vec<impl osm::Element>, fp: &str) {
         .flatten()
         .collect::<Vec<i64>>();
 
-    let message_type = "
+    let msgtype = "
         message schema {
-            REQUIRED INT64 id,
-            REQUIRED VARCHAR k,
-            REQUIRED VARCHAR v,
+            REQUIRED INT64 id;
+            REQUIRED BYTE_ARRAY k;
+            REQUIRED BYTE_ARRAY v;
         }
         ";
+
+    let schema = sync::Arc::new(parse_message_type(msgtype).unwrap());
+    let props = sync::Arc::new(WriterProperties::builder().build());
+    let f = std::fs::File::create(fp).unwrap();
+    let mut w = SerializedFileWriter::new(f, schema, props).unwrap();
+    let mut rgw = w.next_row_group().unwrap();
+
+    for i in 0..3 {
+        //while let Some(mut cw) = rgw.next_column().unwrap() {
+        let dt = match i {
+            0 => parquet::data_type::Int64Type,
+            _ => parquet::data_type::ByteArrayType,
+        };
+
+        // write data
+        cw.typed::<parquet::data_type::Int64Type>()
+            .write_batch(&ids, None, None)
+            .unwrap();
+        cw.close().unwrap();
+    }
+
+    rgw.close().unwrap();
+    w.close().unwrap();
 
     //let mut df = df!("id" => ids, "k" => ks, "v" => vs).unwrap();
     //let w = ParquetWriter::new(std::fs::File::create(fp).unwrap());
