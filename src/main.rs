@@ -9,7 +9,11 @@ fn pqwriter<W: std::io::Write>(
     f: W,
 ) -> parquet::errors::Result<SerializedFileWriter<W>> {
     let schema = std::sync::Arc::new(parse_message_type(msgtype).unwrap());
-    let props = std::sync::Arc::new(WriterProperties::builder().build());
+    let props = std::sync::Arc::new(
+        WriterProperties::builder()
+            .set_compression(parquet::basic::Compression::SNAPPY)
+            .build(),
+    );
     SerializedFileWriter::new(f, schema, props)
 }
 
