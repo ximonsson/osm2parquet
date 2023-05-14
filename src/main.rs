@@ -102,7 +102,7 @@ fn nodes2parquet(data: &osm::File, dst: &str) {
         }
         ";
 
-    let mut w = pqwriter::<std::fs::File>(
+    let mut w = pqwriter(
         msgtype,
         std::fs::File::create(format!("{}/nodes.parquet", dst)).unwrap(),
     )
@@ -151,7 +151,7 @@ fn ways2parquet(data: &osm::File, dst: &str) {
         }
         ";
 
-    let mut w = pqwriter::<std::fs::File>(
+    let mut w = pqwriter(
         msgtype,
         std::fs::File::create(format!("{}/ways.parquet", dst)).unwrap(),
     )
@@ -200,7 +200,7 @@ fn ways2parquet(data: &osm::File, dst: &str) {
         }
         ";
 
-    let mut w = pqwriter::<std::fs::File>(
+    let mut w = pqwriter(
         msgtype,
         std::fs::File::create(format!("{}/way-nodes.parquet", dst)).unwrap(),
     )
@@ -236,7 +236,7 @@ fn rels2parquet(data: &osm::File, dst: &str) {
         }
         ";
 
-    let mut w = pqwriter::<std::fs::File>(
+    let mut w = pqwriter(
         msgtype,
         std::fs::File::create(format!("{}/relations.parquet", dst)).unwrap(),
     )
@@ -311,7 +311,7 @@ fn rels2parquet(data: &osm::File, dst: &str) {
         }
         ";
 
-    let mut w = pqwriter::<std::fs::File>(
+    let mut w = pqwriter(
         msgtype,
         std::fs::File::create(format!("{}/relation-members.parquet", dst)).unwrap(),
     )
