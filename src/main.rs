@@ -4,6 +4,9 @@ use parquet::{
     schema::parser::parse_message_type,
 };
 
+// batch size for writing
+const SIZE_ROW_GRP: usize = 10000000;
+
 fn pqwriter<W: std::io::Write>(
     msgtype: &str,
     f: W,
@@ -85,15 +88,9 @@ fn nodes2parquet(data: &osm::File, dst: &str) {
     // store nodes
     //
 
-    let mut ids = Vec::<i64>::with_capacity(data.nodes.len());
-    let mut lat = Vec::<f64>::with_capacity(data.nodes.len());
-    let mut lon = Vec::<f64>::with_capacity(data.nodes.len());
-    data.nodes.iter().for_each(|n| {
-        ids.push(n.id);
-        lat.push(n.lat);
-        lon.push(n.lon)
-    });
-
+    let mut ids = Vec::<i64>::with_capacity(SIZE_ROW_GRP);
+    let mut lat = Vec::<f64>::with_capacity(SIZE_ROW_GRP);
+    let mut lon = Vec::<f64>::with_capacity(SIZE_ROW_GRP);
     let msgtype = "
         message schema {
             REQUIRED INT64 id;
@@ -107,27 +104,41 @@ fn nodes2parquet(data: &osm::File, dst: &str) {
         std::fs::File::create(format!("{}/nodes.parquet", dst)).unwrap(),
     )
     .unwrap();
-    let mut rgw = w.next_row_group().unwrap();
 
-    let mut cw = rgw.next_column().unwrap().unwrap();
-    cw.typed::<Int64Type>()
-        .write_batch(&ids, None, None)
-        .unwrap();
-    cw.close().unwrap();
+    // divide into groups so we don't kill the machine
+    data.nodes.chunks(SIZE_ROW_GRP).for_each(|ns| {
+        ns.iter().for_each(|n| {
+            ids.push(n.id);
+            lat.push(n.lat);
+            lon.push(n.lon)
+        });
 
-    let mut cw = rgw.next_column().unwrap().unwrap();
-    cw.typed::<parquet::data_type::DoubleType>()
-        .write_batch(&lat, None, None)
-        .unwrap();
-    cw.close().unwrap();
+        let mut rgw = w.next_row_group().unwrap();
 
-    let mut cw = rgw.next_column().unwrap().unwrap();
-    cw.typed::<parquet::data_type::DoubleType>()
-        .write_batch(&lon, None, None)
-        .unwrap();
-    cw.close().unwrap();
+        let mut cw = rgw.next_column().unwrap().unwrap();
+        cw.typed::<Int64Type>()
+            .write_batch(&ids, None, None)
+            .unwrap();
+        cw.close().unwrap();
 
-    rgw.close().unwrap();
+        let mut cw = rgw.next_column().unwrap().unwrap();
+        cw.typed::<parquet::data_type::DoubleType>()
+            .write_batch(&lat, None, None)
+            .unwrap();
+        cw.close().unwrap();
+
+        let mut cw = rgw.next_column().unwrap().unwrap();
+        cw.typed::<parquet::data_type::DoubleType>()
+            .write_batch(&lon, None, None)
+            .unwrap();
+        cw.close().unwrap();
+
+        rgw.close().unwrap();
+        ids.clear();
+        lat.clear();
+        lon.clear();
+    });
+
     w.close().unwrap();
 
     //
@@ -205,6 +216,7 @@ fn ways2parquet(data: &osm::File, dst: &str) {
         std::fs::File::create(format!("{}/way-nodes.parquet", dst)).unwrap(),
     )
     .unwrap();
+
     let mut rgw = w.next_row_group().unwrap();
 
     let mut cw = rgw.next_column().unwrap().unwrap();
