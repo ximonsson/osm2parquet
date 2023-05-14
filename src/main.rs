@@ -54,19 +54,23 @@ fn tags2parquet(elements: &Vec<impl osm::Element>, fp: &str) {
     let mut w = pqwriter(msgtype, std::fs::File::create(fp).unwrap()).unwrap();
     let mut rgw = w.next_row_group().unwrap();
 
-    for i in 0..3 {
-        if let Some(mut cw) = rgw.next_column().unwrap() {
-            // write data
-            let res = match i {
-                0 => cw.typed::<Int64Type>().write_batch(&ids, None, None),
-                1 => cw.typed::<ByteArrayType>().write_batch(&ks, None, None),
-                2 => cw.typed::<ByteArrayType>().write_batch(&vs, None, None),
-                _ => panic!("should not happen"),
-            };
-            res.unwrap();
-            cw.close().unwrap();
-        }
-    }
+    let mut cw = rgw.next_column().unwrap().unwrap();
+    cw.typed::<Int64Type>()
+        .write_batch(&ids, None, None)
+        .unwrap();
+    cw.close().unwrap();
+
+    let mut cw = rgw.next_column().unwrap().unwrap();
+    cw.typed::<ByteArrayType>()
+        .write_batch(&ks, None, None)
+        .unwrap();
+    cw.close().unwrap();
+
+    let mut cw = rgw.next_column().unwrap().unwrap();
+    cw.typed::<ByteArrayType>()
+        .write_batch(&vs, None, None)
+        .unwrap();
+    cw.close().unwrap();
 
     rgw.close().unwrap();
     w.close().unwrap();
@@ -356,7 +360,7 @@ fn main() {
     );
 
     //
-    // migrate to duckdb
+    // migrate to parquet
     //
 
     println!("migrate to parquet. ---");
