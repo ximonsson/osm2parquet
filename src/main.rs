@@ -337,6 +337,9 @@ fn rels2parquet(data: &osm::File, dst: &str) {
         .write_batch(&memtype, None, None)
         .unwrap();
     cw.close().unwrap();
+
+    rgw.close().unwrap();
+    w.close().unwrap();
 }
 
 fn main() {
