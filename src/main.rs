@@ -24,28 +24,28 @@ fn tags2parquet(elements: &Vec<impl osm::Element>, fp: &str) {
         .map(|e| {
             e.tags()
                 .iter()
-                .map(|t| -> ByteArray { t.k.as_str().into() })
+                .map(|t| t.k.as_str().into())
                 .collect::<Vec<ByteArray>>()
         })
         .flatten()
-        .collect::<Vec<ByteArray>>();
+        .collect();
 
     let vs: Vec<ByteArray> = elements
         .iter()
         .map(|e| {
             e.tags()
                 .iter()
-                .map(|t| -> ByteArray { t.v.as_str().into() })
+                .map(|t| t.v.as_str().into())
                 .collect::<Vec<ByteArray>>()
         })
         .flatten()
-        .collect::<Vec<ByteArray>>();
+        .collect();
 
-    let ids = elements
+    let ids: Vec<i64> = elements
         .iter()
         .map(|e| std::iter::repeat(e.id()).take(e.tags().len()))
         .flatten()
-        .collect::<Vec<i64>>();
+        .collect();
 
     let msgtype = "
         message schema {
@@ -143,7 +143,7 @@ fn ways2parquet(data: &osm::File, dst: &str) {
     // store ways
     //
 
-    let ids = data.ways.iter().map(|w| w.id).collect::<Vec<i64>>();
+    let ids: Vec<i64> = data.ways.iter().map(|w| w.id).collect();
 
     let msgtype = "
         message schema {
@@ -179,19 +179,19 @@ fn ways2parquet(data: &osm::File, dst: &str) {
     //
 
     println!(" >> node refs.");
-    let ids = data
+    let ids: Vec<i64> = data
         .ways
         .iter()
         .map(|w| std::iter::repeat(w.id).take(w.nodes.len()))
         .flatten()
-        .collect::<Vec<i64>>();
+        .collect();
 
-    let refs = data
+    let refs: Vec<i64> = data
         .ways
         .iter()
         .map(|w| w.nodes.iter().map(|n| n.r#ref).collect::<Vec<i64>>())
         .flatten()
-        .collect::<Vec<i64>>();
+        .collect();
 
     let msgtype = "
         message schema {
@@ -228,7 +228,7 @@ fn rels2parquet(data: &osm::File, dst: &str) {
     // store relations
     //
 
-    let ids = data.relations.iter().map(|r| r.id).collect::<Vec<i64>>();
+    let ids: Vec<i64> = data.relations.iter().map(|r| r.id).collect();
 
     let msgtype = "
         message schema {
@@ -264,43 +264,43 @@ fn rels2parquet(data: &osm::File, dst: &str) {
     //
 
     println!(" >> members.");
-    let memid = data
+    let memid: Vec<i64> = data
         .relations
         .iter()
         .map(|r| r.members.iter().map(|m| m.r#ref).collect::<Vec<i64>>())
         .flatten()
-        .collect::<Vec<i64>>();
+        .collect();
 
-    let memtype = data
+    let memtype: Vec<ByteArray> = data
         .relations
         .iter()
         .map(|r| {
             r.members
                 .iter()
-                .map(|m| -> ByteArray { m.r#type.as_str().into() })
+                .map(|m| m.r#type.as_str().into())
                 .collect::<Vec<ByteArray>>()
         })
         .flatten()
-        .collect::<Vec<ByteArray>>();
+        .collect();
 
-    let memrole = data
+    let memrole: Vec<ByteArray> = data
         .relations
         .iter()
         .map(|r| {
             r.members
                 .iter()
-                .map(|m| -> ByteArray { m.role.as_str().into() })
+                .map(|m| m.role.as_str().into())
                 .collect::<Vec<ByteArray>>()
         })
         .flatten()
-        .collect::<Vec<ByteArray>>();
+        .collect();
 
-    let ids = data
+    let ids: Vec<i64> = data
         .relations
         .iter()
         .map(|e| std::iter::repeat(e.id).take(e.members.len()))
         .flatten()
-        .collect::<Vec<i64>>();
+        .collect();
 
     let msgtype = "
         message schema {
