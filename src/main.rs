@@ -160,6 +160,9 @@ fn ways2parquet(data: &osm::File, dst: &str) {
         .unwrap();
     cw.close().unwrap();
 
+    rgw.close().unwrap();
+    w.close().unwrap();
+
     //
     // store tags
     //
@@ -195,7 +198,7 @@ fn ways2parquet(data: &osm::File, dst: &str) {
 
     let mut w = pqwriter::<std::fs::File>(
         msgtype,
-        std::fs::File::create(format!("{}/ways.parquet", dst)).unwrap(),
+        std::fs::File::create(format!("{}/way-nodes.parquet", dst)).unwrap(),
     )
     .unwrap();
     let mut rgw = w.next_row_group().unwrap();
@@ -211,6 +214,9 @@ fn ways2parquet(data: &osm::File, dst: &str) {
         .write_batch(&refs, None, None)
         .unwrap();
     cw.close().unwrap();
+
+    rgw.close().unwrap();
+    w.close().unwrap();
 }
 
 fn rels2parquet(data: &osm::File, dst: &str) {
@@ -238,6 +244,9 @@ fn rels2parquet(data: &osm::File, dst: &str) {
         .write_batch(&ids, None, None)
         .unwrap();
     cw.close().unwrap();
+
+    rgw.close().unwrap();
+    w.close().unwrap();
 
     //
     // store tags
