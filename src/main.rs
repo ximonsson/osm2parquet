@@ -336,10 +336,10 @@ fn export_pbf(r: impl std::io::Read + 'static, dst: &str) {
     let mut ways = Vec::<osm::Way>::with_capacity(BUFSIZE);
     let mut rels = Vec::<osm::Relation>::with_capacity(BUFSIZE);
 
-    osm::proto::FileBlockIterator::from_reader(r).for_each(|fb| {
+    for fb in osm::proto::FileBlockIterator::from_reader(r) {
         if let osm::proto::FileBlock::Primitive(b) = fb {
             let str_tbl = osm::proto::parse_str_tbl(&b);
-            b.primitivegroup.iter().for_each(|pg| {
+            for pg in &b.primitivegroup {
                 if let Some(dense) = &pg.dense {
                     nodes.append(
                         &mut osm::Node::from_proto_dense_nodes(&dense, &str_tbl, &b)
@@ -396,9 +396,9 @@ fn export_pbf(r: impl std::io::Read + 'static, dst: &str) {
                         nodes.clear();
                     }
                 }
-            });
+            }
         }
-    });
+    }
 
     // flush buffers
     write_nodes(&nodes, &mut wnode);
