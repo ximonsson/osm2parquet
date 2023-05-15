@@ -3,80 +3,26 @@ mod pq;
 use std::fs::File;
 
 fn export_pbf(r: impl std::io::Read + 'static, dst: &str) {
-    //
-    // node writers
-    //
-
-    let mut wnode = pq::writer(
-        pq::SCHEMA_NODE,
-        File::create(format!("{}/nodes.parquet", dst)).unwrap(),
-    )
-    .unwrap();
-
-    let mut wnode_tags = pq::writer(
-        pq::SCHEMA_TAGS,
-        File::create(format!("{}/node-tags.parquet", dst)).unwrap(),
-    )
-    .unwrap();
-
-    //
-    // way writers
-    //
-
-    let mut wway = pq::writer(
-        pq::SCHEMA_WAY,
-        File::create(format!("{}/ways.parquet", dst)).unwrap(),
-    )
-    .unwrap();
-
-    let mut wway_tags = pq::writer(
-        pq::SCHEMA_TAGS,
-        File::create(format!("{}/way-tags.parquet", dst)).unwrap(),
-    )
-    .unwrap();
-
-    let mut wway_nodes = pq::writer(
-        pq::SCHEMA_WAY_NODE,
-        File::create(format!("{}/way-nodes.parquet", dst)).unwrap(),
-    )
-    .unwrap();
-
-    //
-    // relations
-    //
-
-    let mut wrel = pq::writer(
-        pq::SCHEMA_RELATION,
-        File::create(format!("{}/relations.parquet", dst)).unwrap(),
-    )
-    .unwrap();
-
-    let mut wrel_tags = pq::writer(
-        pq::SCHEMA_TAGS,
-        File::create(format!("{}/relation-tags.parquet", dst)).unwrap(),
-    )
-    .unwrap();
-
-    let mut wrel_mem = pq::writer(
-        pq::SCHEMA_RELATION_MEMBER,
-        File::create(format!("{}/relation-members.parquet", dst)).unwrap(),
-    )
-    .unwrap();
-
-    //
-    // Worker threads for each primitive element
-    //
-
     const BUFSIZE: usize = 1000000;
     const CHANSIZE: usize = 500;
 
     println!("start workers.");
 
+    let fp_nodes = format!("{}/nodes.parquet", dst);
+    let fp_node_tags = format!("{}/node-tags.parquet", dst);
+
     // Nodes
     let (sender_node, receiver_node) = std::sync::mpsc::sync_channel(CHANSIZE);
     let worker_nodes = std::thread::spawn(move || {
+        // writers
+        let mut wnode = pq::writer(pq::SCHEMA_NODE, File::create(fp_nodes).unwrap()).unwrap();
+        let mut wnode_tags =
+            pq::writer(pq::SCHEMA_TAGS, File::create(fp_node_tags).unwrap()).unwrap();
+
+        // internal buffer
         let mut buf = Vec::<osm::Node>::with_capacity(BUFSIZE);
 
+        // listen for work
         while let Ok(mut vs) = receiver_node.recv() {
             buf.append(&mut vs);
             if buf.len() >= BUFSIZE {
@@ -86,18 +32,34 @@ fn export_pbf(r: impl std::io::Read + 'static, dst: &str) {
             }
         }
 
+        // flush buffer
         pq::write_nodes(&buf, &mut wnode);
         pq::write_tags(&buf, &mut wnode_tags);
-        buf.clear();
+
+        // close writers
         wnode.close().unwrap();
         wnode_tags.close().unwrap();
     });
 
     // Ways
+
+    let fp_ways = format!("{}/ways.parquet", dst);
+    let fp_way_tags = format!("{}/way-tags.parquet", dst);
+    let fp_way_nodes = format!("{}/way-nodes.parquet", dst);
+
     let (sender_of_ways, receiver_of_ways) = std::sync::mpsc::sync_channel(CHANSIZE);
     let worker_ways = std::thread::spawn(move || {
+        // writers
+        let mut wway = pq::writer(pq::SCHEMA_WAY, File::create(fp_ways).unwrap()).unwrap();
+        let mut wway_tags =
+            pq::writer(pq::SCHEMA_TAGS, File::create(fp_way_tags).unwrap()).unwrap();
+        let mut wway_nodes =
+            pq::writer(pq::SCHEMA_WAY_NODE, File::create(fp_way_nodes).unwrap()).unwrap();
+
+        // buffer
         let mut buf = Vec::<osm::Way>::with_capacity(BUFSIZE);
 
+        // listen for work
         while let Ok(mut vs) = receiver_of_ways.recv() {
             buf.append(&mut vs);
             if buf.len() >= BUFSIZE {
@@ -108,21 +70,39 @@ fn export_pbf(r: impl std::io::Read + 'static, dst: &str) {
             }
         }
 
+        // flush buffers
         pq::write_ways(&buf, &mut wway);
         pq::write_tags(&buf, &mut wway_tags);
         pq::write_way_nodes(&buf, &mut wway_nodes);
-        buf.clear();
 
+        // close writer
         wway.close().unwrap();
         wway_tags.close().unwrap();
         wway_nodes.close().unwrap();
     });
 
     // Relations
+
+    let fp_rels = format!("{}/relations.parquet", dst);
+    let fp_rel_tags = format!("{}/relation-tags.parquet", dst);
+    let fp_rel_mems = format!("{}/relation-members.parquet", dst);
+
     let (sender_of_relations, receiver_of_relations) = std::sync::mpsc::sync_channel(CHANSIZE);
     let worker_relations = std::thread::spawn(move || {
+        // writers
+        let mut wrel = pq::writer(pq::SCHEMA_RELATION, File::create(fp_rels).unwrap()).unwrap();
+        let mut wrel_tags =
+            pq::writer(pq::SCHEMA_TAGS, File::create(fp_rel_tags).unwrap()).unwrap();
+        let mut wrel_mem = pq::writer(
+            pq::SCHEMA_RELATION_MEMBER,
+            File::create(fp_rel_mems).unwrap(),
+        )
+        .unwrap();
+
+        // buffer
         let mut buf = Vec::<osm::Relation>::with_capacity(BUFSIZE);
 
+        // listen for work
         while let Ok(mut vs) = receiver_of_relations.recv() {
             buf.append(&mut vs);
             if buf.len() >= BUFSIZE {
@@ -133,19 +113,24 @@ fn export_pbf(r: impl std::io::Read + 'static, dst: &str) {
             }
         }
 
+        // flush buffer
         pq::write_relations(&buf, &mut wrel);
         pq::write_tags(&buf, &mut wrel_tags);
         pq::write_relation_members(&buf, &mut wrel_mem);
-        buf.clear();
 
+        // close writers
         wrel.close().unwrap();
         wrel_tags.close().unwrap();
         wrel_mem.close().unwrap();
     });
 
+    // iterate over file blocks
+
     for fb in osm::proto::FileBlockIterator::from_reader(r) {
         if let osm::proto::FileBlock::Primitive(b) = fb {
             let str_tbl = osm::proto::parse_str_tbl(&b);
+
+            // iterate over primitive groups
             for pg in &b.primitivegroup {
                 if let Some(dense) = &pg.dense {
                     sender_node
