@@ -327,98 +327,138 @@ fn export_pbf(r: impl std::io::Read + 'static, dst: &str) {
     .unwrap();
 
     //
-    // buffers
+    // Worker threads for each primitive element
     //
 
     const BUFSIZE: usize = 1000000;
+    const CHANSIZE: usize = 500;
 
-    let mut nodes = Vec::<osm::Node>::with_capacity(BUFSIZE);
-    let mut ways = Vec::<osm::Way>::with_capacity(BUFSIZE);
-    let mut rels = Vec::<osm::Relation>::with_capacity(BUFSIZE);
+    println!("start workers.");
+
+    // Nodes
+    let (sender_node, receiver_node) = std::sync::mpsc::sync_channel(CHANSIZE);
+    let worker_nodes = std::thread::spawn(move || {
+        let mut buf = Vec::<osm::Node>::with_capacity(BUFSIZE);
+
+        while let Ok(mut vs) = receiver_node.recv() {
+            buf.append(&mut vs);
+            if buf.len() >= BUFSIZE {
+                write_nodes(&buf, &mut wnode);
+                write_tags(&buf, &mut wnode_tags);
+                buf.clear();
+            }
+        }
+
+        write_nodes(&buf, &mut wnode);
+        write_tags(&buf, &mut wnode_tags);
+        buf.clear();
+        wnode.close().unwrap();
+        wnode_tags.close().unwrap();
+    });
+
+    // Ways
+    let (sender_of_ways, receiver_of_ways) = std::sync::mpsc::sync_channel(CHANSIZE);
+    let worker_ways = std::thread::spawn(move || {
+        let mut buf = Vec::<osm::Way>::with_capacity(BUFSIZE);
+
+        while let Ok(mut vs) = receiver_of_ways.recv() {
+            buf.append(&mut vs);
+            if buf.len() >= BUFSIZE {
+                write_ways(&buf, &mut wway);
+                write_tags(&buf, &mut wway_tags);
+                write_way_nodes(&buf, &mut wway_nodes);
+                buf.clear();
+            }
+        }
+
+        write_ways(&buf, &mut wway);
+        write_tags(&buf, &mut wway_tags);
+        write_way_nodes(&buf, &mut wway_nodes);
+        buf.clear();
+
+        wway.close().unwrap();
+        wway_tags.close().unwrap();
+        wway_nodes.close().unwrap();
+    });
+
+    // Relations
+    let (sender_of_relations, receiver_of_relations) = std::sync::mpsc::sync_channel(CHANSIZE);
+    let worker_relations = std::thread::spawn(move || {
+        let mut buf = Vec::<osm::Relation>::with_capacity(BUFSIZE);
+
+        while let Ok(mut vs) = receiver_of_relations.recv() {
+            buf.append(&mut vs);
+            if buf.len() >= BUFSIZE {
+                write_relations(&buf, &mut wrel);
+                write_tags(&buf, &mut wrel_tags);
+                write_relation_members(&buf, &mut wrel_mem);
+                buf.clear();
+            }
+        }
+
+        write_relations(&buf, &mut wrel);
+        write_tags(&buf, &mut wrel_tags);
+        write_relation_members(&buf, &mut wrel_mem);
+        buf.clear();
+
+        wrel.close().unwrap();
+        wrel_tags.close().unwrap();
+        wrel_mem.close().unwrap();
+    });
 
     for fb in osm::proto::FileBlockIterator::from_reader(r) {
         if let osm::proto::FileBlock::Primitive(b) = fb {
             let str_tbl = osm::proto::parse_str_tbl(&b);
             for pg in &b.primitivegroup {
                 if let Some(dense) = &pg.dense {
-                    nodes.append(
-                        &mut osm::Node::from_proto_dense_nodes(&dense, &str_tbl, &b)
-                            .collect::<Vec<osm::Node>>(),
-                    );
-
-                    if nodes.len() >= BUFSIZE {
-                        write_nodes(&nodes, &mut wnode);
-                        write_tags(&nodes, &mut wnode_tags);
-                        nodes.clear();
-                    }
+                    sender_node
+                        .send(
+                            osm::Node::from_proto_dense_nodes(&dense, &str_tbl, &b)
+                                .collect::<Vec<osm::Node>>(),
+                        )
+                        .unwrap();
                 } else if pg.ways.len() > 0 {
-                    ways.append(
-                        &mut pg
-                            .ways
-                            .iter()
-                            .map(|way| osm::Way::from_proto(&way, &str_tbl))
-                            .collect::<Vec<osm::Way>>(),
-                    );
-
-                    if ways.len() >= BUFSIZE {
-                        write_ways(&ways, &mut wway);
-                        write_tags(&ways, &mut wway_tags);
-                        write_way_nodes(&ways, &mut wway_nodes);
-                        ways.clear();
-                    }
+                    sender_of_ways
+                        .send(
+                            pg.ways
+                                .iter()
+                                .map(|way| osm::Way::from_proto(&way, &str_tbl))
+                                .collect::<Vec<osm::Way>>(),
+                        )
+                        .unwrap();
                 } else if pg.relations.len() > 0 {
-                    rels.append(
-                        &mut pg
-                            .relations
-                            .iter()
-                            .map(|rel| osm::Relation::from_proto(&rel, &str_tbl))
-                            .collect::<Vec<osm::Relation>>(),
-                    );
-
-                    if rels.len() >= BUFSIZE {
-                        write_relations(&rels, &mut wrel);
-                        write_tags(&rels, &mut wrel_tags);
-                        write_relation_members(&rels, &mut wrel_mem);
-                        rels.clear();
-                    }
+                    sender_of_relations
+                        .send(
+                            pg.relations
+                                .iter()
+                                .map(|rel| osm::Relation::from_proto(&rel, &str_tbl))
+                                .collect::<Vec<osm::Relation>>(),
+                        )
+                        .unwrap();
                 } else if pg.nodes.len() > 0 {
-                    nodes.append(
-                        &mut pg
-                            .nodes
-                            .iter()
-                            .map(|node| osm::Node::from_proto(&node, &str_tbl, &b))
-                            .collect::<Vec<osm::Node>>(),
-                    );
-
-                    if nodes.len() >= BUFSIZE {
-                        write_nodes(&nodes, &mut wnode);
-                        write_tags(&nodes, &mut wnode_tags);
-                        nodes.clear();
-                    }
+                    sender_node
+                        .send(
+                            pg.nodes
+                                .iter()
+                                .map(|node| osm::Node::from_proto(&node, &str_tbl, &b))
+                                .collect::<Vec<osm::Node>>(),
+                        )
+                        .unwrap();
                 }
             }
         }
     }
 
-    // flush buffers
-    write_nodes(&nodes, &mut wnode);
-    write_tags(&nodes, &mut wnode_tags);
-    write_ways(&ways, &mut wway);
-    write_tags(&ways, &mut wway_tags);
-    write_way_nodes(&ways, &mut wway_nodes);
-    write_relations(&rels, &mut wrel);
-    write_tags(&rels, &mut wrel_tags);
-    write_relation_members(&rels, &mut wrel_mem);
+    // Join workers
+    println!("join threads");
 
-    // close all writers
-    wnode.close().unwrap();
-    wnode_tags.close().unwrap();
-    wway.close().unwrap();
-    wway_tags.close().unwrap();
-    wway_nodes.close().unwrap();
-    wrel.close().unwrap();
-    wrel_tags.close().unwrap();
-    wrel_mem.close().unwrap();
+    drop(sender_node);
+    drop(sender_of_relations);
+    drop(sender_of_ways);
+
+    worker_nodes.join().unwrap();
+    worker_ways.join().unwrap();
+    worker_relations.join().unwrap();
 }
 
 fn tags2parquet(elements: &[impl osm::Element], fp: &str) {
