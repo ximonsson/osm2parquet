@@ -71,21 +71,6 @@ fn write_tags<W: std::io::Write>(elements: &[impl osm::Element], w: &mut Seriali
     rgw.close().unwrap();
 }
 
-fn tags2parquet(elements: &[impl osm::Element], fp: &str) {
-    let mut w = pqwriter(
-        "message schema {
-            REQUIRED INT64 id;
-            REQUIRED BYTE_ARRAY k;
-            REQUIRED BYTE_ARRAY v;
-        }",
-        File::create(fp).unwrap(),
-    )
-    .unwrap();
-    write_tags(elements, &mut w);
-
-    w.close().unwrap();
-}
-
 fn write_nodes<W: std::io::Write>(nodes: &[osm::Node], w: &mut SerializedFileWriter<W>) {
     let mut ids = Vec::<i64>::with_capacity(nodes.len());
     let mut lat = Vec::<f64>::with_capacity(nodes.len());
@@ -121,32 +106,6 @@ fn write_nodes<W: std::io::Write>(nodes: &[osm::Node], w: &mut SerializedFileWri
     ids.clear();
     lat.clear();
     lon.clear();
-}
-
-fn nodes2parquet(nodes: &[osm::Node], dst: &str) {
-    //
-    // store nodes
-    //
-
-    let mut w = pqwriter(
-        "message schema {
-            REQUIRED INT64 id;
-            REQUIRED DOUBLE lat;
-            REQUIRED DOUBLE lon;
-        }
-        ",
-        File::create(format!("{}/nodes.parquet", dst)).unwrap(),
-    )
-    .unwrap();
-    write_nodes(nodes, &mut w);
-    w.close().unwrap();
-
-    //
-    // store tags
-    //
-
-    println!(" >> tags.");
-    tags2parquet(nodes, &format!("{}/node-tags.parquet", dst));
 }
 
 fn write_ways<W: std::io::Write>(ways: &[osm::Way], w: &mut SerializedFileWriter<W>) {
@@ -190,47 +149,6 @@ fn write_way_nodes<W: std::io::Write>(ways: &[osm::Way], w: &mut SerializedFileW
     cw.close().unwrap();
 
     rgw.close().unwrap();
-}
-
-fn ways2parquet(ways: &[osm::Way], dst: &str) {
-    //
-    // store ways
-    //
-
-    let mut w = pqwriter(
-        "message schema {
-            REQUIRED INT64 id;
-        }",
-        File::create(format!("{}/ways.parquet", dst)).unwrap(),
-    )
-    .unwrap();
-    write_ways(ways, &mut w);
-    w.close().unwrap();
-
-    //
-    // store tags
-    //
-
-    println!(" >> tags.");
-    tags2parquet(ways, &format!("{}/way-tags.parquet", dst));
-
-    //
-    // store node refs
-    //
-
-    println!(" >> node refs.");
-
-    let mut w = pqwriter(
-        "message schema {
-            REQUIRED INT64 way;
-            REQUIRED INT64 node;
-        }",
-        File::create(format!("{}/way-nodes.parquet", dst)).unwrap(),
-    )
-    .unwrap();
-    write_way_nodes(ways, &mut w);
-
-    w.close().unwrap();
 }
 
 fn write_relations<W: std::io::Write>(
@@ -315,49 +233,6 @@ fn write_relation_members<W: std::io::Write>(
     cw.close().unwrap();
 
     rgw.close().unwrap();
-}
-
-fn rels2parquet(relations: &[osm::Relation], dst: &str) {
-    //
-    // store relations
-    //
-
-    let mut w = pqwriter(
-        "message schema {
-            REQUIRED INT64 id;
-        }",
-        File::create(format!("{}/relations.parquet", dst)).unwrap(),
-    )
-    .unwrap();
-    write_relations(relations, &mut w);
-    w.close().unwrap();
-
-    //
-    // store tags
-    //
-
-    println!(" >> tags.");
-    tags2parquet(relations, &format!("{}/relation-tags.parquet", dst));
-
-    //
-    // store members
-    //
-
-    println!(" >> members.");
-
-    let mut w = pqwriter(
-        "message schema {
-            REQUIRED INT64 relation;
-            REQUIRED INT64 member;
-            REQUIRED BYTE_ARRAY role;
-            REQUIRED BYTE_ARRAY type;
-        }
-        ",
-        File::create(format!("{}/relation-members.parquet", dst)).unwrap(),
-    )
-    .unwrap();
-    write_relation_members(relations, &mut w);
-    w.close().unwrap();
 }
 
 fn export_pbf(r: impl std::io::Read + 'static, dst: &str) {
@@ -466,18 +341,24 @@ fn export_pbf(r: impl std::io::Read + 'static, dst: &str) {
             let str_tbl = osm::proto::parse_str_tbl(&b);
             b.primitivegroup.iter().for_each(|pg| {
                 if let Some(dense) = &pg.dense {
-                    osm::Node::from_proto_dense_nodes(&dense, &str_tbl, &b)
-                        .for_each(|n| nodes.push(n));
+                    nodes.append(
+                        &mut osm::Node::from_proto_dense_nodes(&dense, &str_tbl, &b)
+                            .collect::<Vec<osm::Node>>(),
+                    );
+
                     if nodes.len() >= BUFSIZE {
                         write_nodes(&nodes, &mut wnode);
                         write_tags(&nodes, &mut wnode_tags);
                         nodes.clear();
                     }
                 } else if pg.ways.len() > 0 {
-                    pg.ways
-                        .iter()
-                        .map(|way| osm::Way::from_proto(&way, &str_tbl))
-                        .for_each(|w| ways.push(w));
+                    ways.append(
+                        &mut pg
+                            .ways
+                            .iter()
+                            .map(|way| osm::Way::from_proto(&way, &str_tbl))
+                            .collect::<Vec<osm::Way>>(),
+                    );
 
                     if ways.len() >= BUFSIZE {
                         write_ways(&ways, &mut wway);
@@ -486,10 +367,13 @@ fn export_pbf(r: impl std::io::Read + 'static, dst: &str) {
                         ways.clear();
                     }
                 } else if pg.relations.len() > 0 {
-                    pg.relations
-                        .iter()
-                        .map(|rel| osm::Relation::from_proto(&rel, &str_tbl))
-                        .for_each(|rel| rels.push(rel));
+                    rels.append(
+                        &mut pg
+                            .relations
+                            .iter()
+                            .map(|rel| osm::Relation::from_proto(&rel, &str_tbl))
+                            .collect::<Vec<osm::Relation>>(),
+                    );
 
                     if rels.len() >= BUFSIZE {
                         write_relations(&rels, &mut wrel);
@@ -498,10 +382,13 @@ fn export_pbf(r: impl std::io::Read + 'static, dst: &str) {
                         rels.clear();
                     }
                 } else if pg.nodes.len() > 0 {
-                    pg.nodes
-                        .iter()
-                        .map(|node| osm::Node::from_proto(&node, &str_tbl, &b))
-                        .for_each(|node| nodes.push(node));
+                    nodes.append(
+                        &mut pg
+                            .nodes
+                            .iter()
+                            .map(|node| osm::Node::from_proto(&node, &str_tbl, &b))
+                            .collect::<Vec<osm::Node>>(),
+                    );
 
                     if nodes.len() >= BUFSIZE {
                         write_nodes(&nodes, &mut wnode);
@@ -532,6 +419,131 @@ fn export_pbf(r: impl std::io::Read + 'static, dst: &str) {
     wrel.close().unwrap();
     wrel_tags.close().unwrap();
     wrel_mem.close().unwrap();
+}
+
+fn tags2parquet(elements: &[impl osm::Element], fp: &str) {
+    let mut w = pqwriter(
+        "message schema {
+            REQUIRED INT64 id;
+            REQUIRED BYTE_ARRAY k;
+            REQUIRED BYTE_ARRAY v;
+        }",
+        File::create(fp).unwrap(),
+    )
+    .unwrap();
+    write_tags(elements, &mut w);
+
+    w.close().unwrap();
+}
+
+fn nodes2parquet(nodes: &[osm::Node], dst: &str) {
+    //
+    // store nodes
+    //
+
+    let mut w = pqwriter(
+        "message schema {
+            REQUIRED INT64 id;
+            REQUIRED DOUBLE lat;
+            REQUIRED DOUBLE lon;
+        }
+        ",
+        File::create(format!("{}/nodes.parquet", dst)).unwrap(),
+    )
+    .unwrap();
+    write_nodes(nodes, &mut w);
+    w.close().unwrap();
+
+    //
+    // store tags
+    //
+
+    println!(" >> tags.");
+    tags2parquet(nodes, &format!("{}/node-tags.parquet", dst));
+}
+
+fn rels2parquet(relations: &[osm::Relation], dst: &str) {
+    //
+    // store relations
+    //
+
+    let mut w = pqwriter(
+        "message schema {
+            REQUIRED INT64 id;
+        }",
+        File::create(format!("{}/relations.parquet", dst)).unwrap(),
+    )
+    .unwrap();
+    write_relations(relations, &mut w);
+    w.close().unwrap();
+
+    //
+    // store tags
+    //
+
+    println!(" >> tags.");
+    tags2parquet(relations, &format!("{}/relation-tags.parquet", dst));
+
+    //
+    // store members
+    //
+
+    println!(" >> members.");
+
+    let mut w = pqwriter(
+        "message schema {
+            REQUIRED INT64 relation;
+            REQUIRED INT64 member;
+            REQUIRED BYTE_ARRAY role;
+            REQUIRED BYTE_ARRAY type;
+        }
+        ",
+        File::create(format!("{}/relation-members.parquet", dst)).unwrap(),
+    )
+    .unwrap();
+    write_relation_members(relations, &mut w);
+    w.close().unwrap();
+}
+
+fn ways2parquet(ways: &[osm::Way], dst: &str) {
+    //
+    // store ways
+    //
+
+    let mut w = pqwriter(
+        "message schema {
+            REQUIRED INT64 id;
+        }",
+        File::create(format!("{}/ways.parquet", dst)).unwrap(),
+    )
+    .unwrap();
+    write_ways(ways, &mut w);
+    w.close().unwrap();
+
+    //
+    // store tags
+    //
+
+    println!(" >> tags.");
+    tags2parquet(ways, &format!("{}/way-tags.parquet", dst));
+
+    //
+    // store node refs
+    //
+
+    println!(" >> node refs.");
+
+    let mut w = pqwriter(
+        "message schema {
+            REQUIRED INT64 way;
+            REQUIRED INT64 node;
+        }",
+        File::create(format!("{}/way-nodes.parquet", dst)).unwrap(),
+    )
+    .unwrap();
+    write_way_nodes(ways, &mut w);
+
+    w.close().unwrap();
 }
 
 fn export_xml(r: impl std::io::Read, dst: &str) {
