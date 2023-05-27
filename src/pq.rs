@@ -6,8 +6,8 @@ use parquet::{
 
 pub const SCHEMA_TAGS: &str = "message schema {
     REQUIRED INT64 id;
-    REQUIRED BYTE_ARRAY k;
-    REQUIRED BYTE_ARRAY v;
+    REQUIRED BYTE_ARRAY k (STRING);
+    REQUIRED BYTE_ARRAY v (STRING);
 }";
 
 pub const SCHEMA_NODE: &str = "message schema {
@@ -32,8 +32,8 @@ pub const SCHEMA_RELATION: &str = "message schema {
 pub const SCHEMA_RELATION_MEMBER: &str = "message schema {
     REQUIRED INT64 relation;
     REQUIRED INT64 member;
-    REQUIRED BYTE_ARRAY role;
-    REQUIRED BYTE_ARRAY type;
+    REQUIRED BYTE_ARRAY role (STRING);
+    REQUIRED BYTE_ARRAY type (STRING);
 }";
 
 pub fn writer<W: std::io::Write>(
