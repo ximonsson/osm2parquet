@@ -1,18 +1,27 @@
+mod pbf;
 mod pq;
 
 use std::fs::File;
 
-fn export_pbf(r: impl std::io::Read + 'static, dst: &str) {
-    const BUFSIZE: usize = 1000000;
-    const CHANSIZE: usize = 500;
+const DEFAULT_BUFSIZE: usize = 2000;
+const DEFAULT_CHANSIZE: usize = 100;
 
+fn export_pbf(
+    r: impl std::io::Read + 'static,
+    dst: &str,
+    bufsize: Option<usize>,
+    chansize: Option<usize>,
+) {
     println!("start workers.");
+
+    let bufsize: usize = bufsize.unwrap_or(DEFAULT_BUFSIZE);
+    let chansize: usize = chansize.unwrap_or(DEFAULT_CHANSIZE);
 
     let fp_nodes = format!("{}/nodes.parquet", dst);
     let fp_node_tags = format!("{}/node-tags.parquet", dst);
 
     // Nodes
-    let (sender_node, receiver_node) = std::sync::mpsc::sync_channel(CHANSIZE);
+    let (sender_node, receiver_node) = std::sync::mpsc::sync_channel(chansize);
     let worker_nodes = std::thread::spawn(move || {
         // writers
         let mut wnode = pq::writer(pq::SCHEMA_NODE, File::create(fp_nodes).unwrap()).unwrap();
@@ -20,12 +29,13 @@ fn export_pbf(r: impl std::io::Read + 'static, dst: &str) {
             pq::writer(pq::SCHEMA_TAGS, File::create(fp_node_tags).unwrap()).unwrap();
 
         // internal buffer
-        let mut buf = Vec::<osm::Node>::with_capacity(BUFSIZE);
+        let mut buf = Vec::<osm::Node>::with_capacity(bufsize);
 
         // listen for work
         while let Ok(mut vs) = receiver_node.recv() {
             buf.append(&mut vs);
-            if buf.len() >= BUFSIZE {
+
+            if buf.len() >= bufsize {
                 pq::write_nodes(&buf, &mut wnode);
                 pq::write_tags(&buf, &mut wnode_tags);
                 buf.clear();
@@ -47,7 +57,7 @@ fn export_pbf(r: impl std::io::Read + 'static, dst: &str) {
     let fp_way_tags = format!("{}/way-tags.parquet", dst);
     let fp_way_nodes = format!("{}/way-nodes.parquet", dst);
 
-    let (sender_of_ways, receiver_of_ways) = std::sync::mpsc::sync_channel(CHANSIZE);
+    let (sender_of_ways, receiver_of_ways) = std::sync::mpsc::sync_channel(chansize);
     let worker_ways = std::thread::spawn(move || {
         // writers
         let mut wway = pq::writer(pq::SCHEMA_WAY, File::create(fp_ways).unwrap()).unwrap();
@@ -57,12 +67,12 @@ fn export_pbf(r: impl std::io::Read + 'static, dst: &str) {
             pq::writer(pq::SCHEMA_WAY_NODE, File::create(fp_way_nodes).unwrap()).unwrap();
 
         // buffer
-        let mut buf = Vec::<osm::Way>::with_capacity(BUFSIZE);
+        let mut buf = Vec::<osm::Way>::with_capacity(bufsize);
 
         // listen for work
         while let Ok(mut vs) = receiver_of_ways.recv() {
             buf.append(&mut vs);
-            if buf.len() >= BUFSIZE {
+            if buf.len() >= bufsize {
                 pq::write_ways(&buf, &mut wway);
                 pq::write_tags(&buf, &mut wway_tags);
                 pq::write_way_nodes(&buf, &mut wway_nodes);
@@ -87,7 +97,7 @@ fn export_pbf(r: impl std::io::Read + 'static, dst: &str) {
     let fp_rel_tags = format!("{}/relation-tags.parquet", dst);
     let fp_rel_mems = format!("{}/relation-members.parquet", dst);
 
-    let (sender_of_relations, receiver_of_relations) = std::sync::mpsc::sync_channel(CHANSIZE);
+    let (sender_of_relations, receiver_of_relations) = std::sync::mpsc::sync_channel(chansize);
     let worker_relations = std::thread::spawn(move || {
         // writers
         let mut wrel = pq::writer(pq::SCHEMA_RELATION, File::create(fp_rels).unwrap()).unwrap();
@@ -100,12 +110,12 @@ fn export_pbf(r: impl std::io::Read + 'static, dst: &str) {
         .unwrap();
 
         // buffer
-        let mut buf = Vec::<osm::Relation>::with_capacity(BUFSIZE);
+        let mut buf = Vec::<osm::Relation>::with_capacity(bufsize);
 
         // listen for work
         while let Ok(mut vs) = receiver_of_relations.recv() {
             buf.append(&mut vs);
-            if buf.len() >= BUFSIZE {
+            if buf.len() >= bufsize {
                 pq::write_relations(&buf, &mut wrel);
                 pq::write_tags(&buf, &mut wrel_tags);
                 pq::write_relation_members(&buf, &mut wrel_mem);
@@ -125,6 +135,7 @@ fn export_pbf(r: impl std::io::Read + 'static, dst: &str) {
     });
 
     // iterate over file blocks
+    println!("read osm pbf file");
 
     for fb in osm::proto::FileBlockIterator::from_reader(r) {
         if let osm::proto::FileBlock::Primitive(b) = fb {
@@ -331,7 +342,7 @@ fn main() {
         .unwrap()
         .to_str()
     {
-        Some("pbf") => export_pbf(r, target),
+        Some("pbf") => pbf::export(r, target, None, None),
         Some("osm") | Some("xml") => export_xml(r, target),
         Some(x) => panic!("Unrecognized file extension {}!", x),
         None => panic!("Unrecognized file extension!"),
